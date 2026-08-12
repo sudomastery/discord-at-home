@@ -35,7 +35,16 @@ export default function Chat({
           setLoadError(error.message);
           return;
         }
-        setMessages(data ?? []);
+        // Merge rather than replace: a realtime INSERT can arrive on the
+        // subscription below before this fetch resolves, and overwriting
+        // state here would drop it.
+        setMessages((prev) => {
+          const byId = new Map((data ?? []).map((m) => [m.id, m]));
+          for (const m of prev) if (!byId.has(m.id)) byId.set(m.id, m);
+          return Array.from(byId.values()).sort((a, b) =>
+            a.created_at.localeCompare(b.created_at)
+          );
+        });
       });
 
     const channel = supabase
@@ -71,7 +80,10 @@ export default function Chat({
       avatar,
       content,
     });
-    if (error) setLoadError(error.message);
+    if (error) {
+      setLoadError(error.message);
+      setDraft(content);
+    }
   }
 
   return (

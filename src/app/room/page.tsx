@@ -169,6 +169,8 @@ export default function RoomPage() {
   useEffect(() => {
     if (!profile) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setError(null);
     fetch("/api/livekit-token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

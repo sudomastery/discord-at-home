@@ -1,10 +1,20 @@
+import { timingSafeEqual } from "crypto";
 import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 
 const MAX_USERNAME_LENGTH = 32;
 
-// 10 viewers + 1 slot reserved for the broadcaster.
+// 10 viewers + 1 broadcaster, sized as a single flat cap. Nothing reserves
+// the broadcaster's slot specifically: if 11 viewers join before the
+// broadcaster does, the broadcaster is locked out same as anyone else.
 const MAX_ROOM_PARTICIPANTS = 11;
+
+function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 const VIEWER_SOURCES = [TrackSource.MICROPHONE, TrackSource.CAMERA];
 const BROADCASTER_SOURCES = [
@@ -48,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   const serverBroadcasterKey = process.env.BROADCASTER_KEY;
   const isBroadcaster = Boolean(
-    serverBroadcasterKey && broadcasterKey && broadcasterKey === serverBroadcasterKey
+    serverBroadcasterKey && broadcasterKey && safeEqual(broadcasterKey, serverBroadcasterKey)
   );
 
   // Best-effort: sets the participant cap the first time this room is

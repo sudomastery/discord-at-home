@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+:root {
+  --discord-bg: #313338;
+  --discord-bg-secondary: #2b2d31;
+  --discord-bg-tertiary: #1e1f22;
+  --discord-bg-floating: #111214;
+  --discord-input: #383a40;
+  --discord-blurple: #5865f2;
+  --discord-blurple-hover: #4752c4;
+  --discord-green: #23a55a;
+  --discord-red: #da373c;
+  --discord-red-hover: #a12d2d;
+  --discord-text: #dbdee1;
+  --discord-text-bright: #f2f3f5;
+  --discord-text-muted: #949ba4;
+  --discord-border: rgba(255, 255, 255, 0.06);
+}
+
+@theme inline {
+  --color-discord-bg: var(--discord-bg);
+  --color-discord-bg-secondary: var(--discord-bg-secondary);
+  --color-discord-bg-tertiary: var(--discord-bg-tertiary);
+  --color-discord-bg-floating: var(--discord-bg-floating);
+  --color-discord-input: var(--discord-input);
+  --color-discord-blurple: var(--discord-blurple);
+  --color-discord-blurple-hover: var(--discord-blurple-hover);
+  --color-discord-green: var(--discord-green);
+  --color-discord-red: var(--discord-red);
+  --color-discord-red-hover: var(--discord-red-hover);
+  --color-discord-text: var(--discord-text);
+  --color-discord-text-bright: var(--discord-text-bright);
+  --color-discord-text-muted: var(--discord-text-muted);
+  --color-discord-border: var(--discord-border);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--discord-bg);
+  color: var(--discord-text);
+}
+
+/* Retheme LiveKit's prebuilt components to match the Discord palette above.
+   Variable names/semantics come from @livekit/components-styles. */
+[data-lk-theme="default"] {
+  --lk-bg: var(--discord-bg);
+  --lk-bg2: var(--discord-bg-secondary);
+  --lk-bg3: #3f4147;
+  --lk-bg4: #4a4d53;
+  --lk-bg5: #55585f;
+  --lk-fg: var(--discord-text-bright);
+  --lk-fg2: var(--discord-text);
+  --lk-fg3: var(--discord-text);
+  --lk-fg4: var(--discord-text-muted);
+  --lk-fg5: var(--discord-text-muted);
+  --lk-border-color: var(--discord-border);
+  --lk-accent-fg: #ffffff;
+  --lk-accent-bg: var(--discord-blurple);
+  --lk-accent2: var(--discord-blurple-hover);
+  --lk-accent3: var(--discord-blurple-hover);
+  --lk-accent4: #3c45a5;
+  --lk-danger-fg: #ffffff;
+  --lk-danger: var(--discord-red);
+  --lk-success: var(--discord-green);
+  --lk-control-fg: var(--lk-fg);
+  --lk-control-bg: var(--discord-bg-secondary);
+  --lk-control-hover-bg: #3f4147;
+  --lk-control-active-bg: #4a4d53;
+  --lk-control-active-hover-bg: #55585f;
+  --lk-font-family: var(--font-geist-sans), system-ui, sans-serif;
+  --lk-control-bar-height: 72px;
+  --lk-chat-header-height: 52px;
+}
+
+/* Background/border for the control bar row live on the wrapping div in
+   room/page.tsx, not here, so a custom button can share the same bar
+   without a duplicate seam. */
+[data-lk-theme="default"] .lk-control-bar {
+  background: transparent;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  flex: 1;
+  overflow-x: auto;
+}
+
+[data-lk-theme="default"] .lk-control-bar .lk-button {
+  border-radius: 9999px;
+}
+
+[data-lk-theme="default"] .lk-participant-tile {
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+[data-lk-theme="default"] .lk-disconnect-button {
+  background: var(--discord-red);
+}
+
+[data-lk-theme="default"] .lk-disconnect-button:hover {
+  background: var(--discord-red-hover);
+}

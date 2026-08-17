@@ -16,7 +16,9 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
-const VIEWER_SOURCES = [TrackSource.MICROPHONE, TrackSource.CAMERA];
+// Viewers can talk but not show video; only the broadcaster can publish a
+// camera or screen share.
+const VIEWER_SOURCES = [TrackSource.MICROPHONE];
 const BROADCASTER_SOURCES = [
   TrackSource.MICROPHONE,
   TrackSource.CAMERA,

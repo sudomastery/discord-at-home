@@ -80,6 +80,78 @@ function useVideoDimensions(containerRef: React.RefObject<HTMLElement | null>) {
   return dims;
 }
 
+function useOutputVolume(
+  containerRef: React.RefObject<HTMLElement | null>,
+  volume: number,
+  muted: boolean,
+  ready: boolean
+) {
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const apply = () => {
+      container.querySelectorAll("audio, video").forEach((el) => {
+        const media = el as HTMLMediaElement;
+        media.volume = volume;
+        media.muted = muted;
+      });
+    };
+
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(container, { childList: true, subtree: true });
+    return () => observer.disconnect();
+    // `ready` isn't read in the body, it just forces this to re-run once
+    // LiveKitRoom actually mounts and containerRef.current stops being null
+    // (a ref populating doesn't retrigger effects on its own).
+  }, [containerRef, volume, muted, ready]);
+}
+
+function VolumeControl({
+  volume,
+  muted,
+  onVolumeChange,
+  onToggleMute,
+}: {
+  volume: number;
+  muted: boolean;
+  onVolumeChange: (volume: number) => void;
+  onToggleMute: () => void;
+}) {
+  const silent = muted || volume === 0;
+
+  return (
+    <div className="flex shrink-0 items-center gap-2 pl-3">
+      <button
+        onClick={onToggleMute}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-discord-text-muted hover:bg-discord-bg-secondary hover:text-discord-text-bright"
+        aria-label={silent ? "Unmute" : "Mute"}
+      >
+        {silent ? (
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+            <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+          </svg>
+        )}
+      </button>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.01}
+        value={silent ? 0 : volume}
+        onChange={(e) => onVolumeChange(Number(e.target.value))}
+        className="h-1 w-20 cursor-pointer accent-discord-blurple"
+        aria-label="Volume"
+      />
+    </div>
+  );
+}
+
 function Stage() {
   const tracks = useTracks(
     [
@@ -153,15 +225,15 @@ function GoLiveButton() {
       onClick={() =>
         localParticipant.setScreenShareEnabled(!isScreenShareEnabled, SCREEN_SHARE_CAPTURE)
       }
-      className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white transition ${
+      className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
         isScreenShareEnabled
-          ? "bg-discord-red hover:bg-discord-red-hover"
-          : "bg-discord-blurple hover:bg-discord-blurple-hover"
+          ? "bg-discord-input text-discord-text-bright hover:bg-discord-bg-tertiary"
+          : "bg-discord-blurple text-white hover:bg-discord-blurple-hover"
       }`}
     >
       {isScreenShareEnabled ? (
         <>
-          <span className="h-2 w-2 rounded-full bg-white" /> Stop
+          <span className="h-2 w-2 rounded-full bg-discord-red" /> Stop sharing
         </>
       ) : (
         "Go live"
@@ -246,6 +318,10 @@ export default function RoomPage() {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<"invite" | "broadcaster" | null>(null);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const roomContainerRef = useRef<HTMLDivElement>(null);
+  useOutputVolume(roomContainerRef, volume, muted, Boolean(token && serverUrl));
 
   useEffect(() => {
     // localStorage/URL parsing isn't available during SSR, so this runs client-side.
@@ -333,6 +409,7 @@ export default function RoomPage() {
 
       {!error && token && serverUrl && (
         <LiveKitRoom
+          ref={roomContainerRef}
           token={token}
           serverUrl={serverUrl}
           connect
@@ -374,10 +451,19 @@ export default function RoomPage() {
                 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-discord-blurple px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-discord-blurple-hover"
               />
               <div className="flex items-center gap-2 overflow-x-auto border-t border-discord-border bg-discord-bg-tertiary pl-3">
+                <VolumeControl
+                  volume={volume}
+                  muted={muted}
+                  onVolumeChange={(v) => {
+                    setVolume(v);
+                    setMuted(false);
+                  }}
+                  onToggleMute={() => setMuted((m) => !m)}
+                />
                 <ControlBar
                   controls={{
                     microphone: true,
-                    camera: true,
+                    camera: role === "broadcaster",
                     screenShare: false,
                     leave: true,
                     chat: false,

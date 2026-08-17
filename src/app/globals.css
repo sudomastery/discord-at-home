@@ -93,12 +93,18 @@ body {
   overflow: hidden;
 }
 
+/* The base stylesheet sets both background and text color to the same
+   red on this button (color: var(--lk-danger)), which made the label
+   unreadable. Force the text white to match the filled background. */
 [data-lk-theme="default"] .lk-disconnect-button {
   background: var(--discord-red);
+  color: #ffffff !important;
+  border-color: var(--discord-red);
 }
 
 [data-lk-theme="default"] .lk-disconnect-button:hover {
   background: var(--discord-red-hover);
+  border-color: var(--discord-red-hover);
 }
 
 /* LiveKit's connection-state toast is `position: fixed; top: .75rem`,

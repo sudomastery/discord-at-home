@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ConnectionStateToast,
   ControlBar,
@@ -9,10 +9,11 @@ import {
   LiveKitRoom,
   ParticipantTile,
   RoomAudioRenderer,
+  StartAudio,
   useLocalParticipant,
   useTracks,
 } from "@livekit/components-react";
-import { ScreenSharePresets, Track } from "livekit-client";
+import { Track } from "livekit-client";
 import EntryGate from "@/components/EntryGate";
 import Chat from "@/components/Chat";
 import {
@@ -25,6 +26,60 @@ import {
 
 const ROOM_NAME = "general";
 
+// Pins capture to a consistent 1080p regardless of the source display's
+// native resolution (matters most on Safari, where capture is otherwise
+// uncapped and can come in oddly sized).
+const SCREEN_SHARE_CAPTURE = {
+  resolution: { width: 1920, height: 1080, frameRate: 30 },
+};
+
+// The built-in ScreenSharePresets.h1080fps30 caps at 5 Mbps, which visibly
+// softens text-heavy screen share. This assumes bandwidth/CPU to spare
+// (small, capped audience; broadcaster opted into 1080p already).
+const SCREEN_SHARE_ENCODING = {
+  maxBitrate: 8_000_000,
+  maxFramerate: 30,
+  priority: "high" as const,
+};
+
+function useVideoDimensions(containerRef: React.RefObject<HTMLElement | null>) {
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let video: HTMLVideoElement | null = null;
+
+    const update = () => {
+      if (video && video.videoWidth && video.videoHeight) {
+        setDims({ width: video.videoWidth, height: video.videoHeight });
+      }
+    };
+
+    const attach = () => {
+      const el = container.querySelector("video");
+      if (!el || el === video) return;
+      video = el as HTMLVideoElement;
+      video.addEventListener("resize", update);
+      video.addEventListener("loadedmetadata", update);
+      update();
+    };
+
+    attach();
+    const observer = new MutationObserver(attach);
+    observer.observe(container, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      video?.removeEventListener("resize", update);
+      video?.removeEventListener("loadedmetadata", update);
+    };
+  }, [containerRef]);
+
+  return dims;
+}
+
 function Stage() {
   const tracks = useTracks(
     [
@@ -33,19 +88,60 @@ function Stage() {
     ],
     { onlySubscribed: false }
   );
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dims = useVideoDimensions(containerRef);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      containerRef.current?.requestFullscreen();
+    }
+  }
 
   if (tracks.length === 0) {
     return (
-      <div className="flex min-h-[40vh] flex-1 items-center justify-center px-6 text-center text-sm text-discord-text-muted md:min-h-0">
+      <div className="flex min-h-0 flex-[3] items-center justify-center px-6 text-center text-sm text-discord-text-muted md:flex-1">
         Nobody is live yet.
       </div>
     );
   }
 
   return (
-    <GridLayout tracks={tracks} className="min-h-[40vh] flex-1 md:min-h-0">
-      <ParticipantTile />
-    </GridLayout>
+    <div ref={containerRef} className="relative min-h-0 flex-[3] bg-black md:flex-1">
+      <GridLayout tracks={tracks} className="h-full">
+        <ParticipantTile />
+      </GridLayout>
+      <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-2">
+        {dims && (
+          <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-medium text-white">
+            {dims.width}×{dims.height}
+          </span>
+        )}
+        <button
+          onClick={toggleFullscreen}
+          className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        >
+          {isFullscreen ? (
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+              <path d="M9 3H5a2 2 0 0 0-2 2v4h2V5h4V3zm10 0h-4v2h4v4h2V5a2 2 0 0 0-2-2zM5 15H3v4a2 2 0 0 0 2 2h4v-2H5v-4zm14 4h-4v2h4a2 2 0 0 0 2-2v-4h-2v4z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+              <path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 4v-4h2v6h-6v-2h4z" />
+            </svg>
+          )}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -54,7 +150,9 @@ function GoLiveButton() {
 
   return (
     <button
-      onClick={() => localParticipant.setScreenShareEnabled(!isScreenShareEnabled)}
+      onClick={() =>
+        localParticipant.setScreenShareEnabled(!isScreenShareEnabled, SCREEN_SHARE_CAPTURE)
+      }
       className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white transition ${
         isScreenShareEnabled
           ? "bg-discord-red hover:bg-discord-red-hover"
@@ -249,10 +347,13 @@ export default function RoomPage() {
             )
           }
           options={{
-            adaptiveStream: true,
+            // Off, not adaptive: with a small, capped audience we'd rather
+            // spend the bandwidth than have LiveKit shrink the encode to
+            // match whatever size the viewer's tile happens to render at.
+            adaptiveStream: false,
             dynacast: true,
             publishDefaults: {
-              screenShareEncoding: ScreenSharePresets.h1080fps30.encoding,
+              screenShareEncoding: SCREEN_SHARE_ENCODING,
               videoCodec: "vp9",
             },
           }}
@@ -266,8 +367,12 @@ export default function RoomPage() {
             showLiveBadge={true}
           />
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               <Stage />
+              <StartAudio
+                label="Click to enable audio"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-discord-blurple px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-discord-blurple-hover"
+              />
               <div className="flex items-center gap-2 overflow-x-auto border-t border-discord-border bg-discord-bg-tertiary pl-3">
                 <ControlBar
                   controls={{

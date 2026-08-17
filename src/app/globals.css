@@ -100,3 +100,11 @@ body {
 [data-lk-theme="default"] .lk-disconnect-button:hover {
   background: var(--discord-red-hover);
 }
+
+/* LiveKit's connection-state toast is `position: fixed; top: .75rem`,
+   pinned to the viewport regardless of page layout, so it renders on top
+   of our header bar instead of below it. Push it down to clear the
+   header (its own height plus a little breathing room). */
+[data-lk-theme="default"] .lk-toast {
+  top: 3.75rem;
+}

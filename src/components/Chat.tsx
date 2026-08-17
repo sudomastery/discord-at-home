@@ -87,7 +87,7 @@ export default function Chat({
   }
 
   return (
-    <aside className="flex h-[45vh] w-full shrink-0 flex-col border-t border-discord-border bg-discord-bg-secondary md:h-auto md:w-80 md:border-t-0 md:border-l min-h-0">
+    <aside className="flex min-h-0 w-full flex-[2] flex-col border-t border-discord-border bg-discord-bg-secondary md:h-auto md:w-80 md:flex-none md:border-t-0 md:border-l">
       <div className="border-b border-discord-border px-4 py-3 text-sm font-semibold text-discord-text-bright">
         # chat
       </div>

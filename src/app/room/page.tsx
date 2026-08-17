@@ -45,7 +45,7 @@ const SCREEN_SHARE_CAPTURE = {
 // softens text-heavy screen share. This assumes bandwidth/CPU to spare
 // (small, capped audience; broadcaster opted into 1080p already).
 const SCREEN_SHARE_ENCODING = {
-  maxBitrate: 8_000_000,
+  maxBitrate: 20_000_000,
   maxFramerate: 60,
   priority: "high" as const,
 };

@@ -32,9 +32,13 @@ const ROOM_NAME = "general";
 
 // Pins capture to a consistent 1080p regardless of the source display's
 // native resolution (matters most on Safari, where capture is otherwise
-// uncapped and can come in oddly sized).
+// uncapped and can come in oddly sized). `audio` defaults to false in
+// livekit-client if omitted, which silently drops system/tab audio
+// entirely, so it has to be requested explicitly here.
 const SCREEN_SHARE_CAPTURE = {
   resolution: { width: 1920, height: 1080, frameRate: 30 },
+  audio: true,
+  systemAudio: "include" as const,
 };
 
 // The built-in ScreenSharePresets.h1080fps30 caps at 5 Mbps, which visibly

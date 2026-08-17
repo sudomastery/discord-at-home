@@ -73,18 +73,11 @@ body {
   --lk-chat-header-height: 52px;
 }
 
-/* Background/border for the control bar row live on the wrapping div in
-   room/page.tsx, not here, so a custom button can share the same bar
-   without a duplicate seam. */
-[data-lk-theme="default"] .lk-control-bar {
-  background: transparent;
-  gap: 0.5rem;
-  padding: 0.65rem 0.75rem;
-  flex: 1;
-  overflow-x: auto;
-}
-
-[data-lk-theme="default"] .lk-control-bar .lk-button {
+/* room/page.tsx composes the control row from individual TrackToggle /
+   DisconnectButton pieces (not the prebuilt ControlBar) so noise
+   cancellation can sit directly next to the microphone button. Both
+   still render the shared .lk-button base class. */
+[data-lk-theme="default"] .lk-button {
   border-radius: 9999px;
 }
 

@@ -1,18 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   ConnectionStateToast,
-  ControlBar,
+  DisconnectButton,
   GridLayout,
   LiveKitRoom,
   ParticipantTile,
   RoomAudioRenderer,
   StartAudio,
+  TrackToggle,
   useLocalParticipant,
+  useRoomContext,
   useTracks,
 } from "@livekit/components-react";
+import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
 import { Track } from "livekit-client";
 import EntryGate from "@/components/EntryGate";
 import Chat from "@/components/Chat";
@@ -217,6 +221,54 @@ function Stage() {
   );
 }
 
+function NoiseFilterToggle() {
+  const { isNoiseFilterEnabled, isNoiseFilterPending, setNoiseFilterEnabled } =
+    useKrispNoiseFilter();
+  const [supported, setSupported] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // Dynamically imported: this package references browser-only Worker
+    // APIs at module scope, which breaks Next.js's server-side prerender
+    // if imported statically at the top of the file.
+    let cancelled = false;
+    import("@livekit/krisp-noise-filter").then(({ isKrispNoiseFilterSupported }) => {
+      if (!cancelled) setSupported(isKrispNoiseFilterSupported());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // On by default: this just sets intent. The hook only actually attaches
+  // the processor once a local microphone track exists, so this is safe
+  // to call before the mic is ever turned on.
+  useEffect(() => {
+    if (supported) setNoiseFilterEnabled(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supported]);
+
+  if (!supported) return null;
+
+  return (
+    <button
+      onClick={() => setNoiseFilterEnabled(!isNoiseFilterEnabled)}
+      disabled={isNoiseFilterPending}
+      aria-pressed={isNoiseFilterEnabled}
+      title="Noise cancellation"
+      className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium transition disabled:opacity-50 ${
+        isNoiseFilterEnabled
+          ? "bg-discord-blurple text-white hover:bg-discord-blurple-hover"
+          : "bg-discord-input text-discord-text hover:bg-discord-bg-tertiary"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+        <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2z" />
+      </svg>
+      <span className="hidden sm:inline">Noise cancellation</span>
+    </button>
+  );
+}
+
 function GoLiveButton() {
   const { localParticipant, isScreenShareEnabled } = useLocalParticipant();
 
@@ -252,6 +304,59 @@ function LiveBadge() {
   );
 }
 
+// The broadcaster's only way out: stops sharing (if live) and disconnects
+// in one action, rather than a separate "Leave" that's easy to hit by
+// mistake while meaning to just pause the share.
+function EndStreamButton() {
+  const room = useRoomContext();
+  const { localParticipant, isScreenShareEnabled } = useLocalParticipant();
+
+  async function handleEndStream() {
+    if (isScreenShareEnabled) {
+      await localParticipant.setScreenShareEnabled(false);
+    }
+    room.disconnect();
+  }
+
+  return (
+    <button
+      onClick={handleEndStream}
+      className="flex shrink-0 items-center gap-1.5 rounded-full bg-discord-red px-4 py-2 text-sm font-semibold text-white transition hover:bg-discord-red-hover"
+    >
+      End stream
+    </button>
+  );
+}
+
+// Viewers only, shown briefly once the screen share track that was live
+// disappears, since the passive "Nobody is live yet." placeholder alone
+// is easy to miss if someone isn't looking at the stage.
+function StreamEndedNotice({ isBroadcaster }: { isBroadcaster: boolean }) {
+  const tracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);
+  const isLive = tracks.length > 0;
+  const wasLive = useRef(false);
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (wasLive.current && !isLive && !isBroadcaster) {
+      setShow(true);
+      const timer = setTimeout(() => setShow(false), 5000);
+      return () => clearTimeout(timer);
+    }
+    wasLive.current = isLive;
+  }, [isLive, isBroadcaster]);
+
+  if (!show) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+      <span className="rounded-full bg-discord-bg-floating px-4 py-2 text-sm font-medium text-discord-text-bright shadow-lg">
+        The stream has ended
+      </span>
+    </div>
+  );
+}
+
 function RoomHeader({
   role,
   profile,
@@ -266,13 +371,15 @@ function RoomHeader({
   showLiveBadge: boolean;
 }) {
   return (
-    <header className="flex items-center gap-2 overflow-x-auto border-b border-discord-border bg-discord-bg-secondary px-3 py-3 sm:gap-3 sm:px-4">
-      <Link
-        href="/"
-        className="shrink-0 text-sm text-discord-text-muted hover:text-discord-text-bright"
-      >
-        &larr; Leave
-      </Link>
+    <header className="flex items-center gap-2 overflow-x-auto overflow-y-hidden border-b border-discord-border bg-discord-bg-secondary px-3 py-3 sm:gap-3 sm:px-4">
+      {role !== "broadcaster" && (
+        <Link
+          href="/"
+          className="shrink-0 text-sm text-discord-text-muted hover:text-discord-text-bright"
+        >
+          &larr; Leave
+        </Link>
+      )}
       <span className="shrink-0 text-sm font-semibold text-discord-text-bright"># general</span>
       {showLiveBadge && <LiveBadge />}
       <div className="ml-auto flex items-center gap-2">
@@ -310,6 +417,7 @@ function RoomHeader({
 }
 
 export default function RoomPage() {
+  const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
   const [broadcasterKey, setBroadcasterKeyState] = useState<string | null>(null);
@@ -423,6 +531,7 @@ export default function RoomPage() {
                 : err.message
             )
           }
+          onDisconnected={() => router.push("/")}
           options={{
             // Off, not adaptive: with a small, capped audience we'd rather
             // spend the bandwidth than have LiveKit shrink the encode to
@@ -450,7 +559,8 @@ export default function RoomPage() {
                 label="Click to enable audio"
                 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-discord-blurple px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-discord-blurple-hover"
               />
-              <div className="flex items-center gap-2 overflow-x-auto border-t border-discord-border bg-discord-bg-tertiary pl-3">
+              <StreamEndedNotice isBroadcaster={role === "broadcaster"} />
+              <div className="flex flex-wrap items-center gap-2 border-t border-discord-border bg-discord-bg-tertiary p-3">
                 <VolumeControl
                   volume={volume}
                   muted={muted}
@@ -460,20 +570,18 @@ export default function RoomPage() {
                   }}
                   onToggleMute={() => setMuted((m) => !m)}
                 />
-                <ControlBar
-                  controls={{
-                    microphone: true,
-                    camera: role === "broadcaster",
-                    screenShare: false,
-                    leave: true,
-                    chat: false,
-                    settings: false,
-                  }}
-                />
-                {role === "broadcaster" && (
-                  <div className="pr-3">
-                    <GoLiveButton />
-                  </div>
+                <TrackToggle source={Track.Source.Microphone} />
+                <NoiseFilterToggle />
+                {role === "broadcaster" ? (
+                  <>
+                    <TrackToggle source={Track.Source.Camera} />
+                    <div className="ml-auto flex items-center gap-2">
+                      <GoLiveButton />
+                      <EndStreamButton />
+                    </div>
+                  </>
+                ) : (
+                  <DisconnectButton>Leave</DisconnectButton>
                 )}
               </div>
             </div>

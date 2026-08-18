@@ -16,6 +16,25 @@ export default function EntryGate({
     const name = username.trim().slice(0, 32);
     if (!name) return;
 
+    // Spend this click's user gesture on a real (silent) playback now, while
+    // it's still valid. Browsers gate autoplay-with-sound per page, not per
+    // element: once one unmuted play() succeeds from a click, the room's
+    // audio/video elements (created moments later, asynchronously, after
+    // LiveKit connects) are allowed to autoplay too. Without this, that
+    // gesture goes unused and the room falls back to a second "click to
+    // enable audio" button once the real track arrives.
+    try {
+      // Real (silent) samples, left unmuted at full volume: a volume of 0
+      // or a muted element doesn't count as the "unmuted playback" browsers
+      // check for, so it wouldn't actually unlock anything.
+      const el = new Audio(
+        "data:audio/wav;base64,UklGRiwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAACAgICAgICAgA=="
+      );
+      el.play().catch(() => {});
+    } catch {
+      // Autoplay unlock is a nice-to-have; StartAudio remains as a fallback.
+    }
+
     const profile: Profile = { username: name, avatar };
     saveProfile(profile);
     onComplete(profile);

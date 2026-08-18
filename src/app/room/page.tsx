@@ -375,7 +375,7 @@ function Stage() {
       )}
       <StartAudio
         label="Click to enable audio"
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-discord-blurple px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-discord-blurple-hover"
+        className="rounded-full bg-discord-blurple px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-discord-blurple-hover"
       />
     </div>
   );

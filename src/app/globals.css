@@ -100,6 +100,19 @@ body {
   border-color: var(--discord-red-hover);
 }
 
+/* The base stylesheet sets `.lk-start-audio-button { position: relative }`
+   and loads after Tailwind, so it silently cancels out the `absolute`
+   centering classes on <StartAudio> in page.tsx: the button was rendering
+   for real, just shoved down into normal document flow below the fold
+   where nobody could see or click it to unlock audio playback. */
+[data-lk-theme="default"] .lk-start-audio-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 20;
+}
+
 /* LiveKit's connection-state toast is `position: fixed; top: .75rem`,
    pinned to the viewport regardless of page layout, so it renders on top
    of our header bar instead of below it. Push it down to clear the

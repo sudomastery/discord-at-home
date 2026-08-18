@@ -36,7 +36,7 @@ const ROOM_NAME = "general";
 // livekit-client if omitted, which silently drops system/tab audio
 // entirely, so it has to be requested explicitly here.
 const SCREEN_SHARE_CAPTURE = {
-  resolution: { width: 1920, height: 1080, frameRate: 60 },
+  resolution: { width: 1920, height: 1080, frameRate: 30 },
   audio: true,
   systemAudio: "include" as const,
 };
@@ -46,7 +46,7 @@ const SCREEN_SHARE_CAPTURE = {
 // (small, capped audience; broadcaster opted into 1080p already).
 const SCREEN_SHARE_ENCODING = {
   maxBitrate: 20_000_000,
-  maxFramerate: 60,
+  maxFramerate: 30,
   priority: "high" as const,
 };
 

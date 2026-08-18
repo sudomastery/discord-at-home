@@ -13,6 +13,7 @@ import {
   StartAudio,
   TrackToggle,
   useLocalParticipant,
+  useParticipants,
   useRoomContext,
   useTracks,
 } from "@livekit/components-react";
@@ -547,6 +548,79 @@ function StreamEndedNotice({ isBroadcaster }: { isBroadcaster: boolean }) {
   );
 }
 
+// Everyone sees the count. Only the broadcaster gets the expandable list of
+// who specifically is in the room, since usernames are self-reported and
+// there's no reason to expose them beyond the person actually running the
+// stream.
+function PresenceIndicator({ isBroadcaster }: { isBroadcaster: boolean }) {
+  const participants = useParticipants();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const count = participants.length;
+
+  useEffect(() => {
+    if (!isBroadcaster) return;
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [isBroadcaster]);
+
+  const countBadge = (
+    <span className="flex items-center gap-1">
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor">
+        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+      </svg>
+      {count}
+    </span>
+  );
+
+  if (!isBroadcaster) {
+    return (
+      <span
+        title="People in the room"
+        className="shrink-0 rounded-full bg-discord-input px-3 py-1 text-xs font-medium text-discord-text"
+      >
+        {countBadge}
+      </span>
+    );
+  }
+
+  const others = participants
+    .filter((p) => !p.isLocal)
+    .map((p) => ({ identity: p.identity, name: p.name || p.identity }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div ref={menuRef} className="relative shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="People in the room"
+        className="rounded-full bg-discord-input px-3 py-1 text-xs font-medium text-discord-text hover:bg-discord-bg-tertiary"
+      >
+        {countBadge}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-9 z-10 max-h-64 w-48 overflow-y-auto rounded-lg bg-discord-bg-floating py-2 text-xs shadow-lg">
+          <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-discord-text-muted">
+            In this room
+          </div>
+          {others.length === 0 ? (
+            <p className="px-3 py-1 text-discord-text-muted">Just you</p>
+          ) : (
+            others.map((p) => (
+              <div key={p.identity} className="truncate px-3 py-1 text-discord-text">
+                {p.name}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoomHeader({
   role,
   profile,
@@ -573,6 +647,7 @@ function RoomHeader({
       <span className="shrink-0 text-sm font-semibold text-discord-text-bright"># general</span>
       {showLiveBadge && <LiveBadge />}
       <div className="ml-auto flex items-center gap-2">
+        {showLiveBadge && <PresenceIndicator isBroadcaster={role === "broadcaster"} />}
         <button
           onClick={() => onCopyLink("invite")}
           className="shrink-0 rounded-full bg-discord-input px-3 py-1 text-xs font-medium text-discord-text hover:bg-discord-bg-tertiary"

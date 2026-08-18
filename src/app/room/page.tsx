@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ConnectionStateToast,
   DisconnectButton,
@@ -555,13 +556,21 @@ function StreamEndedNotice({ isBroadcaster }: { isBroadcaster: boolean }) {
 function PresenceIndicator({ isBroadcaster }: { isBroadcaster: boolean }) {
   const participants = useParticipants();
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const count = participants.length;
 
   useEffect(() => {
     if (!isBroadcaster) return;
     function onClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (
+        menuRef.current?.contains(target) !== true &&
+        buttonRef.current?.contains(target) !== true
+      ) {
+        setOpen(false);
+      }
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
@@ -587,37 +596,57 @@ function PresenceIndicator({ isBroadcaster }: { isBroadcaster: boolean }) {
     );
   }
 
+  // Portaled to <body> instead of positioned relative to this button: the
+  // header scrolls horizontally on narrow screens (overflow-x-auto), which
+  // implicitly clips overflow-y too, so an absolutely-positioned dropdown
+  // here would render invisibly clipped behind the header's own edge.
+  function toggleOpen() {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    setOpen((o) => !o);
+  }
+
   const others = participants
     .filter((p) => !p.isLocal)
     .map((p) => ({ identity: p.identity, name: p.name || p.identity }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div ref={menuRef} className="relative shrink-0">
+    <>
       <button
-        onClick={() => setOpen((o) => !o)}
+        ref={buttonRef}
+        onClick={toggleOpen}
         title="People in the room"
-        className="rounded-full bg-discord-input px-3 py-1 text-xs font-medium text-discord-text hover:bg-discord-bg-tertiary"
+        className="shrink-0 rounded-full bg-discord-input px-3 py-1 text-xs font-medium text-discord-text hover:bg-discord-bg-tertiary"
       >
         {countBadge}
       </button>
-      {open && (
-        <div className="absolute right-0 top-9 z-10 max-h-64 w-48 overflow-y-auto rounded-lg bg-discord-bg-floating py-2 text-xs shadow-lg">
-          <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-discord-text-muted">
-            In this room
-          </div>
-          {others.length === 0 ? (
-            <p className="px-3 py-1 text-discord-text-muted">Just you</p>
-          ) : (
-            others.map((p) => (
-              <div key={p.identity} className="truncate px-3 py-1 text-discord-text">
-                {p.name}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
+      {open &&
+        menuPos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: "fixed", top: menuPos.top, right: menuPos.right }}
+            className="z-50 max-h-64 w-48 overflow-y-auto rounded-lg bg-discord-bg-floating py-2 text-xs shadow-lg"
+          >
+            <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-discord-text-muted">
+              In this room
+            </div>
+            {others.length === 0 ? (
+              <p className="px-3 py-1 text-discord-text-muted">Just you</p>
+            ) : (
+              others.map((p) => (
+                <div key={p.identity} className="truncate px-3 py-1 text-discord-text">
+                  {p.name}
+                </div>
+              ))
+            )}
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 

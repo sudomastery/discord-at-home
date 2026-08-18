@@ -576,6 +576,24 @@ function PresenceIndicator({ isBroadcaster }: { isBroadcaster: boolean }) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [isBroadcaster]);
 
+  // The portaled menu's position is a one-time snapshot of the button's
+  // rect, not something that tracks it live. The header it lives in
+  // scrolls horizontally (overflow-x-auto) and can outlive that snapshot,
+  // so close instead of leaving the menu visually detached from the
+  // button on any scroll or resize while it's open.
+  useEffect(() => {
+    if (!isBroadcaster || !open) return;
+    function close() {
+      setOpen(false);
+    }
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [isBroadcaster, open]);
+
   const countBadge = (
     <span className="flex items-center gap-1">
       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor">

@@ -50,6 +50,15 @@ const SCREEN_SHARE_ENCODING = {
   priority: "high" as const,
 };
 
+// Room-wide default (AudioPresets.music, 48kbps mono) is fine for voice
+// but noticeably flat for movie/music audio, which is the main use case
+// here. Applied specifically to the screen-share-audio publish, not the
+// microphone, since voice doesn't benefit from stereo.
+const SCREEN_SHARE_AUDIO_PUBLISH = {
+  audioPreset: { maxBitrate: 128_000 },
+  forceStereo: true,
+};
+
 function useVideoDimensions(containerRef: React.RefObject<HTMLElement | null>) {
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
 
@@ -94,6 +103,14 @@ function useOutputVolume(
   muted: boolean,
   ready: boolean
 ) {
+  // Only ever force `.muted = true` when the user actually mutes, and only
+  // undo that specific mute ourselves. Never proactively set `.muted =
+  // false`: browsers start these elements muted as part of their autoplay
+  // permission dance (StartAudio unmutes them once playback is confirmed
+  // allowed), and unconditionally overwriting that on every DOM mutation
+  // was racing that logic, especially on mobile's stricter autoplay rules.
+  const mutedByUs = useRef(new WeakSet<HTMLMediaElement>());
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -102,7 +119,12 @@ function useOutputVolume(
       container.querySelectorAll("audio, video").forEach((el) => {
         const media = el as HTMLMediaElement;
         media.volume = volume;
-        media.muted = muted;
+        if (muted) {
+          media.muted = true;
+          mutedByUs.current.add(media);
+        } else if (mutedByUs.current.has(media)) {
+          media.muted = false;
+        }
       });
     };
 
@@ -186,41 +208,47 @@ function Stage() {
     }
   }
 
-  if (tracks.length === 0) {
-    return (
-      <div className="flex min-h-0 flex-[3] items-center justify-center px-6 text-center text-sm text-discord-text-muted md:flex-1">
-        Nobody is live yet.
-      </div>
-    );
-  }
+  const isLive = tracks.length > 0;
 
   return (
     <div ref={containerRef} className="relative min-h-0 flex-[3] bg-black md:flex-1">
-      <GridLayout tracks={tracks} className="h-full">
-        <ParticipantTile />
-      </GridLayout>
-      <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-2">
-        {dims && (
-          <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-medium text-white">
-            {dims.width}×{dims.height}
-          </span>
-        )}
-        <button
-          onClick={toggleFullscreen}
-          className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
-          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-        >
-          {isFullscreen ? (
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-              <path d="M9 3H5a2 2 0 0 0-2 2v4h2V5h4V3zm10 0h-4v2h4v4h2V5a2 2 0 0 0-2-2zM5 15H3v4a2 2 0 0 0 2 2h4v-2H5v-4zm14 4h-4v2h4a2 2 0 0 0 2-2v-4h-2v4z" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-              <path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 4v-4h2v6h-6v-2h4z" />
-            </svg>
+      {isLive ? (
+        <GridLayout tracks={tracks} className="h-full">
+          <ParticipantTile />
+        </GridLayout>
+      ) : (
+        <div className="flex h-full items-center justify-center px-6 text-center text-sm text-discord-text-muted">
+          Nobody is live yet.
+        </div>
+      )}
+      {isLive && (
+        <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-2">
+          {dims && (
+            <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-medium text-white">
+              {dims.width}×{dims.height}
+            </span>
           )}
-        </button>
-      </div>
+          <button
+            onClick={toggleFullscreen}
+            className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          >
+            {isFullscreen ? (
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                <path d="M9 3H5a2 2 0 0 0-2 2v4h2V5h4V3zm10 0h-4v2h4v4h2V5a2 2 0 0 0-2-2zM5 15H3v4a2 2 0 0 0 2 2h4v-2H5v-4zm14 4h-4v2h4a2 2 0 0 0 2-2v-4h-2v4z" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                <path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 4v-4h2v6h-6v-2h4z" />
+              </svg>
+            )}
+          </button>
+        </div>
+      )}
+      <StartAudio
+        label="Click to enable audio"
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-discord-blurple px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-discord-blurple-hover"
+      />
     </div>
   );
 }
@@ -279,7 +307,11 @@ function GoLiveButton() {
   return (
     <button
       onClick={() =>
-        localParticipant.setScreenShareEnabled(!isScreenShareEnabled, SCREEN_SHARE_CAPTURE)
+        localParticipant.setScreenShareEnabled(
+          !isScreenShareEnabled,
+          SCREEN_SHARE_CAPTURE,
+          SCREEN_SHARE_AUDIO_PUBLISH
+        )
       }
       className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
         isScreenShareEnabled
@@ -559,10 +591,6 @@ export default function RoomPage() {
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               <Stage />
-              <StartAudio
-                label="Click to enable audio"
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-discord-blurple px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-discord-blurple-hover"
-              />
               <StreamEndedNotice isBroadcaster={role === "broadcaster"} />
               <div className="flex flex-wrap items-center gap-2 border-t border-discord-border bg-discord-bg-tertiary p-3">
                 <VolumeControl

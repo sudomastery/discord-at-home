@@ -17,7 +17,7 @@ import {
   useTracks,
 } from "@livekit/components-react";
 import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
-import { Track } from "livekit-client";
+import { RemoteVideoTrack, Track } from "livekit-client";
 import EntryGate from "@/components/EntryGate";
 import Chat from "@/components/Chat";
 import {
@@ -58,6 +58,43 @@ const SCREEN_SHARE_AUDIO_PUBLISH = {
   audioPreset: { maxBitrate: 128_000 },
   forceStereo: true,
 };
+
+// Viewer-side only: computes real delivered bitrate from LiveKit's WebRTC
+// receiver stats (bytesReceived delta / time delta), polled every 2s. Has
+// no meaning for the broadcaster's own local preview (a LocalVideoTrack,
+// not RemoteVideoTrack), so it just stays null there.
+function useLiveBitrate(trackRef: { publication?: { track?: unknown } } | undefined) {
+  const [bitrateBps, setBitrateBps] = useState<number | null>(null);
+
+  useEffect(() => {
+    const track = trackRef?.publication?.track;
+    if (!(track instanceof RemoteVideoTrack)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBitrateBps(null);
+      return;
+    }
+
+    let prevStats: Awaited<ReturnType<RemoteVideoTrack["getReceiverStats"]>> | undefined;
+
+    const poll = async () => {
+      const stats = await track.getReceiverStats();
+      if (stats && prevStats && stats.bytesReceived !== undefined && prevStats.bytesReceived !== undefined) {
+        const bytesDelta = stats.bytesReceived - prevStats.bytesReceived;
+        const timeDeltaMs = stats.timestamp - prevStats.timestamp;
+        if (timeDeltaMs > 0) {
+          setBitrateBps((bytesDelta * 8) / (timeDeltaMs / 1000));
+        }
+      }
+      prevStats = stats;
+    };
+
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => clearInterval(interval);
+  }, [trackRef]);
+
+  return bitrateBps;
+}
 
 function useVideoDimensions(containerRef: React.RefObject<HTMLElement | null>) {
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
@@ -192,6 +229,7 @@ function Stage() {
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const dims = useVideoDimensions(containerRef);
+  const bitrateBps = useLiveBitrate(tracks[0]);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -226,6 +264,7 @@ function Stage() {
           {dims && (
             <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-medium text-white">
               {dims.width}×{dims.height}
+              {bitrateBps !== null && ` · ${(bitrateBps / 1_000_000).toFixed(1)} Mbps`}
             </span>
           )}
           <button

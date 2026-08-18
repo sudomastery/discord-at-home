@@ -29,3 +29,32 @@ create policy "public can send messages"
 
 -- Make INSERTs broadcast over Realtime so clients get live updates.
 alter publication supabase_realtime add table public.messages;
+
+-- Tracks when the current broadcast started, purely for the elapsed-time
+-- display (in-room badge and the home page's "live now" indicator).
+-- Whether a stream is actually live comes from LiveKit's own participant
+-- state, not this table, so a stale row here can't get stuck saying live.
+create table if not exists public.stream_status (
+  room text primary key,
+  started_at timestamptz not null
+);
+
+alter table public.stream_status enable row level security;
+
+create policy "public can read stream status"
+  on public.stream_status for select
+  to anon
+  using (true);
+
+-- Writes are gated by the broadcaster key server-side (see
+-- /api/stream-status), not by RLS: the server always writes through this
+-- same anon key, same trust model as the messages table above.
+create policy "public can write stream status"
+  on public.stream_status for insert
+  to anon
+  with check (true);
+
+create policy "public can update stream status"
+  on public.stream_status for update
+  to anon
+  using (true);

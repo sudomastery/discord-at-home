@@ -33,8 +33,8 @@ import {
   saveBroadcasterKey,
   type Profile,
 } from "@/lib/identity";
-
-const ROOM_NAME = "general";
+import { ROOM_NAME } from "@/lib/room";
+import { ElapsedTimer, useStreamStatus } from "@/lib/streamStatus";
 
 // Pins capture to a consistent 1080p regardless of the source display's
 // native resolution (matters most on Safari, where capture is otherwise
@@ -432,15 +432,31 @@ function NoiseFilterToggle() {
 function GoLiveButton() {
   const { localParticipant, isScreenShareEnabled } = useLocalParticipant();
 
+  async function toggle() {
+    const startingNow = !isScreenShareEnabled;
+    await localParticipant.setScreenShareEnabled(
+      startingNow,
+      SCREEN_SHARE_CAPTURE,
+      SCREEN_SHARE_PUBLISH_OPTIONS
+    );
+
+    // Records the start time for the duration display (LiveBadge / home
+    // page). Best-effort: a failed request here shouldn't block going live.
+    if (startingNow) {
+      const broadcasterKey = getBroadcasterKey();
+      if (broadcasterKey) {
+        fetch("/api/stream-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ broadcasterKey }),
+        }).catch(() => {});
+      }
+    }
+  }
+
   return (
     <button
-      onClick={() =>
-        localParticipant.setScreenShareEnabled(
-          !isScreenShareEnabled,
-          SCREEN_SHARE_CAPTURE,
-          SCREEN_SHARE_PUBLISH_OPTIONS
-        )
-      }
+      onClick={toggle}
       className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
         isScreenShareEnabled
           ? "bg-discord-input text-discord-text-bright hover:bg-discord-bg-tertiary"
@@ -460,10 +476,20 @@ function GoLiveButton() {
 
 function LiveBadge() {
   const tracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);
-  if (tracks.length === 0) return null;
+  // Liveness comes from LiveKit's own realtime track presence (instant,
+  // self-correcting). The poll only supplies `since`, which LiveKit's
+  // track info doesn't carry, for the elapsed-time display.
+  const { since } = useStreamStatus(30_000);
+  const isLive = tracks.length > 0;
+
+  if (!isLive) return null;
+
   return (
     <span className="flex items-center gap-1 rounded-full bg-discord-red px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> Live
+      {since && (
+        <ElapsedTimer since={since} className="font-mono normal-case tracking-normal opacity-90" />
+      )}
     </span>
   );
 }

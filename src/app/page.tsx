@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LiveIndicator from "@/components/LiveIndicator";
 
 export default function Home() {
   return (
@@ -13,6 +14,7 @@ export default function Home() {
           just click and you&apos;re in.
         </p>
       </div>
+      <LiveIndicator />
       <Link
         href="/room"
         className="rounded-full bg-discord-blurple px-8 py-3 font-medium text-white transition hover:bg-discord-blurple-hover"

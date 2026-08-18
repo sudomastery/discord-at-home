@@ -1,6 +1,6 @@
-import { timingSafeEqual } from "crypto";
 import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { isBroadcasterKeyValid } from "@/lib/broadcasterAuth";
 
 const MAX_USERNAME_LENGTH = 32;
 
@@ -8,13 +8,6 @@ const MAX_USERNAME_LENGTH = 32;
 // the broadcaster's slot specifically: if 11 viewers join before the
 // broadcaster does, the broadcaster is locked out same as anyone else.
 const MAX_ROOM_PARTICIPANTS = 11;
-
-function safeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
-}
 
 // Viewers can talk but not show video; only the broadcaster can publish a
 // camera or screen share.
@@ -58,10 +51,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const serverBroadcasterKey = process.env.BROADCASTER_KEY;
-  const isBroadcaster = Boolean(
-    serverBroadcasterKey && broadcasterKey && safeEqual(broadcasterKey, serverBroadcasterKey)
-  );
+  const isBroadcaster = isBroadcasterKeyValid(broadcasterKey);
 
   // Best-effort: sets the participant cap the first time this room is
   // created. Has no effect on a room that's already running, since LiveKit

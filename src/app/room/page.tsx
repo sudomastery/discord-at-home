@@ -17,7 +17,13 @@ import {
   useTracks,
 } from "@livekit/components-react";
 import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
-import { RemoteVideoTrack, Track } from "livekit-client";
+import {
+  RemoteTrackPublication,
+  RemoteVideoTrack,
+  Track,
+  VideoPreset,
+  VideoQuality,
+} from "livekit-client";
 import EntryGate from "@/components/EntryGate";
 import Chat from "@/components/Chat";
 import {
@@ -50,14 +56,37 @@ const SCREEN_SHARE_ENCODING = {
   priority: "high" as const,
 };
 
+// Lower simulcast layers published alongside the 1080p top layer (defined
+// by SCREEN_SHARE_ENCODING above), so each viewer's quality menu has real
+// layers to switch between instead of just capping the same single stream.
+const SCREEN_SHARE_SIMULCAST_LAYERS = [
+  new VideoPreset(1280, 720, 4_000_000, 30, "medium"),
+  new VideoPreset(854, 480, 1_200_000, 30, "medium"),
+];
+
 // Room-wide default (AudioPresets.music, 48kbps mono) is fine for voice
 // but noticeably flat for movie/music audio, which is the main use case
-// here. Applied specifically to the screen-share-audio publish, not the
+// here. Applied specifically to the screen-share publish, not the
 // microphone, since voice doesn't benefit from stereo.
-const SCREEN_SHARE_AUDIO_PUBLISH = {
+const SCREEN_SHARE_PUBLISH_OPTIONS = {
   audioPreset: { maxBitrate: 128_000 },
   forceStereo: true,
+  simulcast: true,
+  screenShareSimulcastLayers: SCREEN_SHARE_SIMULCAST_LAYERS,
 };
+
+// "Auto" and 1080p both resolve to the same ceiling (HIGH, the top layer):
+// WebRTC has no way to force a resolution regardless of network, only a
+// cap the SFU won't exceed, and it still degrades below that cap on its
+// own under real congestion either way. Auto is just the unpinned default,
+// kept as a distinct id purely so the menu can highlight it separately
+// from an explicit 1080p pin even though they send the same request.
+const QUALITY_OPTIONS: { id: string; label: string; quality: VideoQuality }[] = [
+  { id: "auto", label: "Auto", quality: VideoQuality.HIGH },
+  { id: "1080p", label: "1080p", quality: VideoQuality.HIGH },
+  { id: "720p", label: "720p", quality: VideoQuality.MEDIUM },
+  { id: "480p", label: "480p", quality: VideoQuality.LOW },
+];
 
 // Viewer-side only: computes real delivered bitrate from LiveKit's WebRTC
 // receiver stats (bytesReceived delta / time delta), polled every 2s. Has
@@ -219,6 +248,62 @@ function VolumeControl({
   );
 }
 
+// Viewer-side only: RemoteTrackPublication.setVideoQuality() caps which
+// simulcast layer the SFU is allowed to send this viewer. Has no meaning
+// for a LocalVideoTrack (the broadcaster's own preview), so the caller
+// only renders this for a confirmed RemoteTrackPublication.
+function QualityMenu({ publication }: { publication: RemoteTrackPublication }) {
+  const [selectedId, setSelectedId] = useState("auto");
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  function choose(option: (typeof QUALITY_OPTIONS)[number]) {
+    setSelectedId(option.id);
+    setOpen(false);
+    publication.setVideoQuality(option.quality);
+  }
+
+  return (
+    <div ref={menuRef} className="pointer-events-auto relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+        aria-label="Video quality"
+        title="Video quality"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+          <path d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.42.32.68.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.1.54.02.68-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-8 z-10 w-24 overflow-hidden rounded-lg bg-discord-bg-floating py-1 text-xs shadow-lg">
+          {QUALITY_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => choose(opt)}
+              className={`block w-full px-3 py-1.5 text-left hover:bg-discord-bg-tertiary ${
+                selectedId === opt.id
+                  ? "font-semibold text-discord-blurple"
+                  : "text-discord-text"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Stage() {
   const tracks = useTracks(
     [
@@ -231,6 +316,9 @@ function Stage() {
   const dims = useVideoDimensions(containerRef);
   const bitrateBps = useLiveBitrate(tracks[0]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const remoteTrack = tracks[0]?.publication?.track;
+  const remotePublication =
+    remoteTrack instanceof RemoteVideoTrack ? (tracks[0].publication as RemoteTrackPublication) : null;
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -267,6 +355,7 @@ function Stage() {
               {bitrateBps !== null && ` · ${(bitrateBps / 1_000_000).toFixed(1)} Mbps`}
             </span>
           )}
+          {remotePublication && <QualityMenu publication={remotePublication} />}
           <button
             onClick={toggleFullscreen}
             className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
@@ -349,7 +438,7 @@ function GoLiveButton() {
         localParticipant.setScreenShareEnabled(
           !isScreenShareEnabled,
           SCREEN_SHARE_CAPTURE,
-          SCREEN_SHARE_AUDIO_PUBLISH
+          SCREEN_SHARE_PUBLISH_OPTIONS
         )
       }
       className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
